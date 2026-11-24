@@ -1,0 +1,20 @@
+# Generated dashboards
+*.html
+!docs/*.html
+
+# kube-burner output, in case someone unpacks a run inside the repo
+collected-metrics-*/
+artifacts/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
