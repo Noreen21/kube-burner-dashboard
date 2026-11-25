@@ -101,43 +101,74 @@ data for CSV export.
 ### Option 2 — serve it over an SSH port-forward
 
 Useful when you are iterating on the remote and don't want to re-copy. The
-listener stays on the remote's loopback, so nothing is exposed to the
-network.
+listener stays on the remote's **loopback**, so nothing is exposed to the
+network; the SSH tunnel is what reaches it.
+
+**Put the dashboard in its own directory named `index.html`.** Serving a
+working directory and guessing the filename is the single most common way
+this goes wrong — `build_dashboard.py` writes whatever `-o` says, so
+`http://localhost:8000/dashboard.html` 404s if your file is actually
+`dashboard-<uuid>.html`.
 
 ```bash
 # on the bastion
-cd /path/containing/dashboard && python3 -m http.server 8000 --bind 127.0.0.1
+mkdir -p ~/dash && cp /path/to/your-dashboard.html ~/dash/index.html
+cd ~/dash && python3 -m http.server 8000 --bind 127.0.0.1
+```
 
-# on your machine
+```bash
+# on your machine, in another terminal
 ssh -N -L 8000:localhost:8000 user@bastion
 ```
 
-Then open <http://localhost:8000/dashboard.html>. No browser proxy settings
-are involved.
+Then open <http://localhost:8000/> — the root URL, no filename to get wrong.
 
-### Option 3 — SOCKS proxy
+If the tunnel won't start, port 8000 is probably busy **locally**. Use a
+different local port; only the left-hand number changes:
 
-Only worth it if you are already proxying your browser through the bastion.
+```bash
+ssh -N -L 8899:localhost:8000 user@bastion   # then http://localhost:8899/
+```
+
+Verify from the shell before blaming the browser:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/
+```
+
+### Option 3 — SOCKS proxy (rarely the right answer)
+
+Only if you are *already* proxying your browser through this host. It is
+strictly worse than option 2 here: it requires binding `0.0.0.0`, which
+exposes the directory to every host that can route to the bastion.
+
+> On a routable lab network this exposure is not theoretical. Testing this
+> section, a laptop reached the bastion's `0.0.0.0:8111` **directly, with no
+> tunnel and no proxy at all** — which also means the SOCKS hop was buying
+> nothing.
 
 ```bash
 ssh -N -D 1080 user@bastion
-# on the bastion:
-python3 -m http.server 8000           # binds 0.0.0.0
+# on the bastion, in a directory containing only the dashboard:
+python3 -m http.server 8111            # binds 0.0.0.0
 ```
 
-Point the browser at SOCKS v5 `127.0.0.1:1080`, then browse to
-`http://<bastion-fqdn>:8000/dashboard.html`.
+Point the browser at SOCKS v5 `127.0.0.1:1080` and browse to
+`http://<bastion-fqdn>:8111/`.
 
-Two things that catch people out here:
+Three things that catch people out:
 
-- **Use the host's FQDN, not `localhost`.** Firefox bypasses the proxy for
+- **Check the port is free on the remote first.** Bastions often already run
+  something on 8080/8000. `ss -lnt | grep :8111` before you start, or
+  `python3 -m http.server` fails with `Address already in use` — and if
+  another service holds the port you'll silently get *its* page instead.
+- **Use the FQDN, not `localhost`.** Firefox bypasses the proxy for
   `localhost`/`127.0.0.1` by default
   (`network.proxy.allow_hijacking_localhost`), so a `localhost` URL hits
-  *your* machine instead of the bastion.
-- Reaching it by FQDN means the server must bind `0.0.0.0`, which exposes
-  the directory to anyone who can route to that host until you stop it.
-  Serve a directory containing only the dashboard, and stop the server when
-  you're done. Prefer option 2 if you don't need this.
+  *your* machine. (`curl --socks5-hostname` does not have this behaviour,
+  so curl can appear to work where Firefox does not.)
+- **Stop the server when you're done.** Backgrounded over SSH without a TTY
+  it will not receive SIGHUP when your session ends; kill it by PID.
 
 ---
 
