@@ -163,7 +163,7 @@ def cpu_util(mdir, fname, cap):
 
 # ---------------------------------------------------------------- panels
 
-def build_panels(mdir, cap):
+def build_panels(mdir, cap, churn=None):
     P = []
 
     P.append({
@@ -176,11 +176,19 @@ def build_panels(mdir, cap):
     ns = [s for s in ns if s["name"] == "Active"] or ns[:1]
     if ns:
         ns[0]["name"] = "Active namespaces"
+    # Only mention churn when the run actually churned, and never hardcode
+    # how many namespaces a round touches -- that is percent * iterations.
+    if churn and churn.get("duration"):
+        pct, iters = churn.get("percent"), churn.get("jobIterations")
+        per = (f" ({max(1, pct * iters // 100)} per round)"
+               if pct and iters else "")
+        ns_sub = ("The sawtooth in the shaded band is churn deleting and "
+                  f"recreating namespaces{per}.")
+    else:
+        ns_sub = "sum(kube_namespace_status_phase) by (phase), Active only."
     P.append({
         "id": "ns", "title": "Active namespaces",
-        "sub": "The sawtooth in the shaded band is churn deleting and "
-               "recreating 3 namespaces per round.",
-        "unit": "", "panels": ns})
+        "sub": ns_sub, "unit": "", "panels": ns})
 
     P.append({
         "id": "pods", "title": "Pods by phase",
@@ -224,25 +232,40 @@ def build_panels(mdir, cap):
         "sub": "Worst member at each sample. Alert thresholds: fsync 10 ms, "
                "commit 25 ms.", "unit": "ms", "panels": etcd})
 
+    # Role file names differ by metrics profile: metrics-aggregated.yml
+    # (cluster-density*) emits *-AggregatedWorkers, while metrics.yml
+    # (node-density*, and most other workloads) emits per-instance
+    # *-Workers. Try both, first match wins. Infra is absent on clusters
+    # without infra nodes and is simply skipped.
+    ROLES = (("Control plane", ("nodeCPU-Masters",),
+              ("nodeMemoryUtilization-Masters",)),
+             ("Workers", ("nodeCPU-AggregatedWorkers", "nodeCPU-Workers"),
+              ("nodeMemoryUtilization-AggregatedWorkers",
+               "nodeMemoryUtilization-Workers")),
+             ("Infra", ("nodeCPU-Infra",),
+              ("nodeMemoryUtilization-Infra",)))
+
     cpu = []
-    for f, label in (("nodeCPU-Masters", "Control plane"),
-                     ("nodeCPU-AggregatedWorkers", "Workers")):
-        pts = cpu_util(mdir, f, cap)
-        if pts:
-            cpu.append({"name": label, "peak": max(v for _, v in pts),
-                        "points": pts})
+    for label, cpu_names, _ in ROLES:
+        for f in cpu_names:
+            pts = cpu_util(mdir, f, cap)
+            if pts:
+                cpu.append({"name": label, "peak": max(v for _, v in pts),
+                            "points": pts})
+                break
     P.append({
         "id": "nodecpu", "title": "Node CPU utilisation",
         "sub": "(total - idle) / total across node_cpu_seconds_total modes.",
         "unit": "%", "panels": cpu})
 
     mem = []
-    for f, label in (("nodeMemoryUtilization-Masters", "Control plane"),
-                     ("nodeMemoryUtilization-AggregatedWorkers", "Workers")):
-        s = series(mdir, f, None, "mean", scale=1 / 2**30, cap=cap)
-        if s:
-            s[0]["name"] = label
-            mem.append(s[0])
+    for label, _, mem_names in ROLES:
+        for f in mem_names:
+            s = series(mdir, f, None, "mean", scale=1 / 2**30, cap=cap)
+            if s:
+                s[0]["name"] = label
+                mem.append(s[0])
+                break
     P.append({
         "id": "nodemem", "title": "Node memory in use",
         "sub": "MemTotal - MemAvailable, averaged per node in the role.",
@@ -678,8 +701,12 @@ def main():
         print(f"not a directory: {mdir}", file=sys.stderr)
         return 2
 
-    panels = build_panels(mdir, a.points)
     meta = build_meta(mdir)
+    _js = load(mdir / 'jobSummary.json')
+    _cfg = (_js[0].get('jobConfig', {}) if _js else {})
+    _churn = dict(_cfg.get('churnConfig') or {},
+                  jobIterations=_cfg.get('jobIterations'))
+    panels = build_panels(mdir, a.points, _churn)
 
     def epoch(s):
         for f in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):

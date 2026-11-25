@@ -290,11 +290,43 @@ blocks), then re-run the validator against your surfaces before shipping.
 
 ---
 
+## Which workloads does this support?
+
+Nothing here is tied to one workload. The panels are driven by the **metrics
+profile**, not the job, and the two profiles `kube-burner-ocp` ships are both
+handled:
+
+| Profile | Used by | Status |
+|---|---|---|
+| `metrics-aggregated.yml` | `cluster-density-v2`, `cluster-density-ms` | supported |
+| `metrics.yml` | `node-density`, `node-density-heavy`, `node-density-cni`, and most others | supported |
+
+The two differ in how they name per-role node metrics —
+`nodeCPU-AggregatedWorkers` vs per-instance `nodeCPU-Workers` (same for
+`nodeMemoryUtilization-*`). Both spellings are tried, so worker series show
+up either way. `*-Infra` is picked up when the cluster has infra nodes.
+
+Everything else is job-agnostic by construction:
+
+- `podLatencyQuantilesMeasurement-<job>.json` is matched by glob, so the job
+  name doesn't matter.
+- **Churn is optional.** With no `churnConfig`, the churn band is not drawn
+  and the tile shows total elapsed time instead.
+- Panels whose source metrics are missing are skipped rather than erroring,
+  so a custom profile degrades gracefully instead of failing.
+
+Worth knowing: the object-count queries are **cluster-wide**
+(`count(kube_secret_info{})`), not scoped to the job's namespaces. For a
+workload that creates few API objects — `node-density` just schedules pause
+pods — that panel shows cluster totals that barely move, which is correct
+but uninteresting. The pod, API, etcd and node panels are the useful ones
+there.
+
 ## Limitations
 
-- Built against the OpenShift metrics profile (`metrics-aggregated.yml`) from
-  `kube-burner-ocp`. Vanilla `kube-burner` profiles expose different metric
-  names; unknown panels are skipped rather than erroring.
+- Developed against `kube-burner-ocp`. Upstream `kube-burner` with a custom
+  profile will render whichever panels its metric names match, and skip the
+  rest.
 - Time series are downsampled by bucket mean (max for latency). Raise
   `--points` for more fidelity, or use `process_metrics.py --csv` for the
   full-resolution data.
