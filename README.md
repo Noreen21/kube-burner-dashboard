@@ -21,7 +21,8 @@ renders those into one `.html` file you can open, archive, or email.
 
 ## Requirements
 
-Python **3.8+**. Standard library only — no `pip install`, no virtualenv.
+Python **3.9+**. Standard library only — no `pip install`, no virtualenv.
+Tested on 3.9 and 3.13.
 
 ## Quick start
 
@@ -65,6 +66,78 @@ RUN SUMMARY  (jobSummary.json)
   max-99thEtcdDiskWalFsync                           1.53 ms
   max-99thEtcdDiskBackendCommit                      3.39 ms
 ```
+
+---
+
+## Viewing it when the run happened on a remote host
+
+kube-burner usually runs on a bastion or jump host, not on your laptop. The
+output is **one self-contained file with no external requests**, so you have
+three options — and the first needs no tunnel, no server and no browser
+configuration.
+
+### Option 1 — copy the file (recommended)
+
+```bash
+scp user@bastion:/path/to/dashboard.html .
+open dashboard.html
+```
+
+That's it. Nothing else in this section is necessary unless you specifically
+want to serve it.
+
+You can also skip the remote entirely: copy the metrics directory down and
+run the generator locally.
+
+```bash
+scp -r user@bastion:/path/to/collected-metrics-<uuid> .
+python3 build_dashboard.py collected-metrics-<uuid>/ -o dashboard.html
+```
+
+Expect roughly 50 MB for a ~45-minute run, against ~75 KB for the rendered
+dashboard — so copying the HTML is far cheaper unless you also want the raw
+data for CSV export.
+
+### Option 2 — serve it over an SSH port-forward
+
+Useful when you are iterating on the remote and don't want to re-copy. The
+listener stays on the remote's loopback, so nothing is exposed to the
+network.
+
+```bash
+# on the bastion
+cd /path/containing/dashboard && python3 -m http.server 8000 --bind 127.0.0.1
+
+# on your machine
+ssh -N -L 8000:localhost:8000 user@bastion
+```
+
+Then open <http://localhost:8000/dashboard.html>. No browser proxy settings
+are involved.
+
+### Option 3 — SOCKS proxy
+
+Only worth it if you are already proxying your browser through the bastion.
+
+```bash
+ssh -N -D 1080 user@bastion
+# on the bastion:
+python3 -m http.server 8000           # binds 0.0.0.0
+```
+
+Point the browser at SOCKS v5 `127.0.0.1:1080`, then browse to
+`http://<bastion-fqdn>:8000/dashboard.html`.
+
+Two things that catch people out here:
+
+- **Use the host's FQDN, not `localhost`.** Firefox bypasses the proxy for
+  `localhost`/`127.0.0.1` by default
+  (`network.proxy.allow_hijacking_localhost`), so a `localhost` URL hits
+  *your* machine instead of the bastion.
+- Reaching it by FQDN means the server must bind `0.0.0.0`, which exposes
+  the directory to anyone who can route to that host until you stop it.
+  Serve a directory containing only the dashboard, and stop the server when
+  you're done. Prefer option 2 if you don't need this.
 
 ---
 

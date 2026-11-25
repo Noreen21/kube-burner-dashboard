@@ -2,11 +2,13 @@
 """
 Python twin of the dataviz skill's scripts/validate_palette.js.
 
-Written because neither this workstation nor the bastion has a Node runtime,
-and the skill requires the palette be validated by running the checks rather
-than reasoned about. Constants, the Machado-Oliveira-Fernandes (2009)
-severity-1.0 CVD matrices, and the check semantics are ported verbatim from
-the JS original so the two agree.
+Checks a categorical palette for accessibility instead of eyeballing it:
+the OKLCH lightness band and chroma floor, separation under simulated
+colour-vision deficiency (Machado-Oliveira-Fernandes 2009, severity 1.0),
+a normal-vision floor, and WCAG contrast against the chart surface.
+
+Run this after changing the --s1..--s6 values in build_dashboard.py.
+Pure standard library, so it needs no Node or npm.
 
 Usage:
   validate_palette.py "#hex,#hex,..." [--mode light|dark] [--surface #hex]
