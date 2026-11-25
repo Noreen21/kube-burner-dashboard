@@ -527,11 +527,15 @@ function drawPanel(card,p){
     l.textContent=fmt(v,p.unit); svg.appendChild(l);
   });
   svg.appendChild(mk("line",{x1:ML,x2:W-MR,y1:H-MB,y2:H-MB,stroke:cssv("--axis"),"stroke-width":1}));
+  // A short run collapses every HH:MM tick to the same string (a 4 s
+  // node-density run printed "06:41" six times), so fall back to HH:MM:SS
+  // once the whole span fits inside a few minutes.
+  const xfmt=(t1-t0)<900?hms:hhmm;
   const steps=5;
   for(let i=0;i<=steps;i++){
     const t=t0+(t1-t0)*i/steps;
     const l=mk("text",{x:X(t),y:H-MB+16,"text-anchor":"middle","font-size":11,fill:cssv("--muted")});
-    l.textContent=hhmm(t); svg.appendChild(l);
+    l.textContent=xfmt(t); svg.appendChild(l);
   }
 
   // series: 2px lines

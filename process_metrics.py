@@ -143,13 +143,19 @@ def report(mdir, args):
         out.append(f"  iterations    {cfg.get('jobIterations')}  "
                    f"qps={cfg.get('qps')} burst={cfg.get('burst')} gc={cfg.get('gc')}")
         out.append(f"  achievedQps   {s.get('achievedQps')}")
-        if churn:
-            out.append(f"  churn         {churn.get('duration', 0) / 1e9:.0f}s "
+        # churnConfig is present with percent/delay/mode defaults even when
+        # churn never ran -- duration is the field that says it happened.
+        # Gating on the dict alone printed "churn 0s" and a
+        # "None -> None" window for every non-churn workload.
+        if churn.get("duration"):
+            out.append(f"  churn         {churn['duration'] / 1e9:.0f}s "
                        f"@{churn.get('percent')}% every "
                        f"{churn.get('delay', 0) / 1e9:.0f}s "
                        f"mode={churn.get('mode')}")
             out.append(f"  churn window  {s.get('churnStartTimestamp')} -> "
                        f"{s.get('churnEndTimestamp')}")
+        else:
+            out.append("  churn         not enabled")
         out.append("")
 
     # ---- alerts
